@@ -3,6 +3,12 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "start": "bun run index.ts",
+    "bootstrap": "bun run src/scripts/bootstrap.ts",
+    "test": "bun test",
+    "kill": "lsof -t -i:4000 | xargs kill -9"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -10,11 +16,14 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@envelop/core": "^5.5.1",
     "@graphql-tools/schema": "^10.0.33",
     "arangojs": "^10.3.0",
     "dotenv": "^17.4.2",
     "graphql": "^16.14.0",
+    "graphql-scalars": "^1.25.0",
     "graphql-yoga": "^5.21.0",
+    "msw": "^2.14.6",
     "superstruct": "^2.0.2"
   }
 }

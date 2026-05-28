@@ -1,0 +1,479 @@
+enum PivotStatus {
+  PROPOSED
+  REVIEW
+  SOVEREIGN_SEAL
+  DEPRECATED
+}
+
+enum QuestStatus {
+  ACTIVE
+  RESOLVED
+  STALLED
+}
+
+enum CreativeDriver {
+  ANALOGICAL_LEAP
+  SYSTEMIC_INVERSION
+  EMERGENT_SYNTHESIS
+}
+
+enum GuardrailID {
+  EPISTEMIC_HUMILITY
+  VERIFIABILITY
+  CORRIGIBILITY
+  CONSENT_SEEKING
+  PROCESS_TRANSPARENCY
+}
+
+enum CheckResult {
+  PASS
+  WARN
+  FAIL
+}
+
+enum TaskStatus {
+  OPEN
+  READY
+  TESTING
+  CLOSED
+}
+
+enum GroundingStatus {
+  PENDING
+  VERIFIED
+  CONFLICT
+  UNKNOWN
+}
+
+enum EpistemicLabel {
+  KNOWN
+  INFERRED
+  UNCERTAIN
+  UNKNOWN
+}
+
+enum AlchemicalStage {
+  NIGREDO
+  ALBEDO
+  CITRINITAS
+  RUBEDO
+}
+
+type RetrospectiveDoing {
+  start: String
+  continue: String
+  stop: String
+}
+
+type Retrospective {
+  id: ID!
+  taskId: String!
+  title: String!
+  wentWell: String
+  wentBad: String
+  doing: RetrospectiveDoing
+  actions: [String!]!
+  timestamp: String!
+}
+
+type EpistemicMark {
+  id: ID!
+  label: EpistemicLabel!
+  topic: String!
+  reasoningChain: String
+  sessionId: String
+  timestamp: String!
+}
+
+type Task {
+  id: ID!
+  title: String!
+  status: TaskStatus!
+  priority: String
+  project: String
+  scope: String
+  description: String
+  notes: String
+  definitionOfDone: String
+  prompt: String
+  results: JSON
+  createdAt: String
+  updatedAt: String
+  subtasks: [Task!]!
+}
+
+type TaskDependency {
+  fromId: String!
+  toId: String!
+  depType: String!
+}
+
+type SovereignPivot {
+  id: ID!
+  ruptureId: String!
+  proposal: String!
+  expectedDelta: String!
+  status: PivotStatus!
+  timestamp: String!
+}
+
+type SovereignQuest {
+  id: ID!
+  unknownId: String!
+  focusArea: String!
+  status: QuestStatus!
+  discoveredEvidence: [String!]!
+  timestamp: String!
+}
+
+type GuardrailCheck {
+  guardrail: GuardrailID!
+  result: CheckResult!
+  notes: String
+}
+
+type SoterIncident {
+  id: ID!
+  request: String!
+  riskScore: Int!
+  resolved: Boolean!
+  timestamp: String!
+  patterns: [GuardrailCheck!]!
+  response: String
+}
+
+type SoterReview {
+  id: ID!
+  incidentId: String!
+  status: String!
+  priority: String!
+  decision: String
+  createdAt: String!
+}
+
+type MemoryFragment {
+  id: ID!
+  fragment: String!
+  provenance: String!
+  timestamp: String!
+}
+
+type SovereignState {
+  unresolvedIncidents: Int!
+  readyTasks: [Task!]!
+  recentMemory: MemoryFragment
+}
+
+type HypothesisMetadata {
+  noveltyScore: Float!
+  coherenceScore: Float!
+  creativeDrivers: [CreativeDriver!]!
+}
+
+type EdgeInfo {
+  id: ID!
+  from: String!
+  to: String!
+  createdAt: String
+}
+
+type Hypothesis {
+  id: ID!
+  rawPatternRepresentation: String!
+  metadata: HypothesisMetadata!
+  isValuable: Boolean!
+}
+
+type Concept {
+  id: ID!
+  name: String!
+  description: String!
+}
+
+type ActionablePlan {
+  id: ID!
+  summary: String!
+  steps: [String!]!
+  riskAssessment: String!
+  groundingStatus: GroundingStatus!
+}
+
+type DreamSession {
+  id: ID!
+  timestamp: String!
+  userPrompt: String!
+  seedConcepts: [String!]!
+}
+
+type ProvenanceChain {
+  plan: ActionablePlan!
+  planToConceptEdge: EdgeInfo!
+  concept: Concept!
+  conceptToHypothesisEdge: EdgeInfo!
+  hypothesis: Hypothesis!
+  hypothesisToSessionEdge: EdgeInfo!
+  session: DreamSession!
+}
+
+type ScoreDistribution {
+  known: Float!
+  inferred: Float!
+  uncertain: Float!
+  unknown: Float!
+  dream: Float!
+}
+
+type BenchmarkScores {
+  nl: ScoreDistribution!
+  al: ScoreDistribution!
+}
+
+type BenchmarkResult {
+  id: ID
+  queryId: Int!
+  category: String!
+  queryText: String!
+  normalResponse: String!
+  abraxasResponse: String!
+  scores: BenchmarkScores!
+  modelId: String!
+  timestamp: String!
+}
+
+type ShadowEntry {
+  id: ID!
+  category: String!
+  content: String!
+  sessionId: String
+  timestamp: String!
+}
+
+type SymbolNode {
+  id: ID!
+  name: String!
+  stage: AlchemicalStage!
+  intention: String
+}
+
+scalar JSON
+
+input RetrospectiveDoingInput {
+  start: String
+  continue: String
+  stop: String
+}
+
+input RetrospectiveInput {
+  taskId: String!
+  title: String!
+  wentWell: String
+  wentBad: String
+  doing: RetrospectiveDoingInput
+  actions: [String!]
+}
+
+input HypothesisMetadataInput {
+  noveltyScore: Float!
+  coherenceScore: Float!
+  creativeDrivers: [CreativeDriver!]!
+}
+
+input ActionablePlanInput {
+  summary: String!
+  steps: [String!]
+  riskAssessment: String
+}
+
+input ScoreDistributionInput {
+  known: Float!
+  inferred: Float!
+  uncertain: Float!
+  unknown: Float!
+  dream: Float!
+}
+
+input BenchmarkResultInput {
+  queryId: Int!
+  category: String!
+  queryText: String!
+}
+
+input SovereignPivotInput {
+  ruptureId: String!
+  proposal: String!
+  expectedDelta: String!
+  channelId: String!
+}
+
+input SovereignQuestInput {
+  unknownId: String!
+  focusArea: String!
+  channelId: String!
+}
+
+input TaskInput {
+  title: String!
+  project: String
+  scope: String
+  priority: String
+  description: String
+  notes: String
+  definitionOfDone: String
+  prompt: String
+  results: JSON
+  subtasks: [TaskInput!]
+}
+
+input TaskStatusInput {
+  id: ID!
+  status: TaskStatus!
+}
+
+input DependencyInput {
+  fromId: ID!
+  toId: ID!
+  depType: String
+}
+
+input GuardrailCheckInput {
+  guardrail: GuardrailID!
+  result: CheckResult!
+  notes: String
+}
+
+input SoterIncidentInput {
+  request: String!
+  score: Int!
+  resolved: Boolean
+  timestamp: String
+  patterns: [GuardrailCheckInput!]
+}
+
+input SoterReviewInput {
+  incidentId: ID!
+  status: String!
+  priority: String!
+  decision: String
+}
+
+input ShadowEntryInput {
+  category: String!
+  content: String!
+  sessionId: String
+}
+
+input SymbolUpdateInput {
+  id: ID!
+  stage: AlchemicalStage!
+  intention: String
+}
+
+input EpistemicMarkInput {
+  label: EpistemicLabel!
+  topic: String!
+  reasoningChain: String
+  sessionId: String
+}
+
+input TaskUpdateInput {
+  title: String
+  project: String
+  scope: String
+  priority: String
+  description: String
+  notes: String
+  definitionOfDone: String
+  prompt: String
+  results: JSON
+  status: TaskStatus
+}
+
+input HypothesisUpdateInput {
+  rawPatternRepresentation: String
+  isValuable: Boolean
+  metadata: HypothesisMetadataInput
+}
+
+input ConceptUpdateInput {
+  name: String
+  description: String
+}
+
+input ActionablePlanUpdateInput {
+  summary: String
+  steps: [String!]
+  riskAssessment: String
+  groundingStatus: GroundingStatus
+}
+
+input SoterIncidentUpdateInput {
+  resolved: Boolean
+  response: String
+}
+
+input SoterReviewUpdateInput {
+  status: String
+  priority: String
+  decision: String
+}
+
+input ShadowEntryUpdateInput {
+  category: String
+  content: String
+  sessionId: String
+}
+
+input EpistemicMarkUpdateInput {
+  label: EpistemicLabel
+  topic: String
+  reasoningChain: String
+  sessionId: String
+}
+
+type Query {
+  getState: SovereignState!
+  getTask(id: ID!): Task
+  getTasks(project: String, status: TaskStatus): [Task!]!
+  getSoterIncidents: [SoterIncident!]!
+  getSoterReviews: [SoterReview!]!
+  getEpistemicMarks: [EpistemicMark!]!
+  getShadowEntries: [ShadowEntry!]!
+  getSymbolNodes: [SymbolNode!]!
+  getBenchmarkResults: [BenchmarkResult!]!
+  getProvenanceChain(planId: ID!): ProvenanceChain
+  getRecentMemory: MemoryFragment
+  getRelevantContext(conceptId: ID!): [Concept!]!
+  verifyGenealogy(conceptId: ID!): [ProvenanceChain!]!
+}
+
+type Mutation {
+  createTask(input: TaskInput!): Task!
+  updateTask(id: ID!, input: TaskUpdateInput!): Task!
+  updateTaskStatus(input: TaskStatusInput!): Task!
+  createDependency(input: DependencyInput!): TaskDependency!
+
+  createIncident(input: SoterIncidentInput!): SoterIncident!
+  updateIncident(id: ID!, input: SoterIncidentUpdateInput!): SoterIncident!
+  createReview(input: SoterReviewInput!): SoterReview!
+  updateReview(id: ID!, input: SoterReviewUpdateInput!): SoterReview!
+
+  createEpistemicMark(input: EpistemicMarkInput!): EpistemicMark!
+  updateEpistemicMark(id: ID!, input: EpistemicMarkUpdateInput!): EpistemicMark!
+
+  createShadowEntry(input: ShadowEntryInput!): ShadowEntry!
+  updateShadowEntry(id: ID!, input: ShadowEntryUpdateInput!): ShadowEntry!
+
+  createSymbol(name: String!, stage: AlchemicalStage!): SymbolNode!
+  updateSymbol(input: SymbolUpdateInput!): SymbolNode!
+
+  createPivot(input: SovereignPivotInput!): SovereignPivot!
+  createQuest(input: SovereignQuestInput!): SovereignQuest!
+
+  createPlan(input: ActionablePlanInput!): ActionablePlan!
+  updatePlan(id: ID!, input: ActionablePlanUpdateInput!): ActionablePlan!
+
+  createMemoryFragment(fragment: String!, provenance: String!): MemoryFragment!
+  setSourceCredibility(sourceId: ID!, tier: Int!): JSON!
+  recordConsensus(divergence: String!, agreement: String!): JSON!
+  bootSovereign(config: JSON!): SovereignState!
+}
