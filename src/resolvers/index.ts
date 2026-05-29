@@ -4,6 +4,21 @@ import { GraphQLError } from 'graphql'
 
 const getCol = (name: string) => db.collection(name);
 
+async function applySoterVeto(input: any) {
+  const riskScore = Math.floor(Math.random() * 100); // Mocked risk scoring
+  if (riskScore > 80) {
+    throw new GraphQLError('Soter Veto: Operation blocked due to high risk score.');
+  }
+  return riskScore;
+}
+
+const epistemicSieve = (data: any) => {
+  if (!data) return null;
+  // Deterministic labeling based on presence of evidence/provenance
+  const label = data.verified ? 'KNOWN' : (data.inferred ? 'INFERRED' : 'UNCERTAIN');
+  return { ...data, label };
+};
+
 export const resolvers = {
   Query: {
     getDatabaseStatus: async () => {
@@ -78,18 +93,8 @@ export const resolvers = {
       
       return enrichedTasks;
     },
-
-    getTasks: async (_, { project, status }) => {
-      const cursor = await db.query(aql`
-        FOR t IN tasks 
-        FILTER (${project ? aql`t.project == ${project}` : 'true'}) 
-        FILTER (${status ? aql`t.status == ${status}` : 'true'}) 
-        RETURN t
-      `);
-      const results = await cursor.all();
-      return mapArangoList(results);
-    },
     getSoterIncidents: async () => {
+
       const cursor = await db.query(aql`FOR i IN incidents RETURN i`);
       const results = await cursor.all();
       return mapArangoList(results);
@@ -120,25 +125,28 @@ export const resolvers = {
       return mapArangoList(results);
     },
     getProvenanceChain: async (_, { planId }) => {
-      const chain = await db.query(aql`
+      const chainCursor = await db.query(aql`
         FOR p IN 1..3 OUTBOUND ${planId} provenance_edges
         RETURN {
           plan: p.document,
           concept: p.vertices[0],
           hypothesis: p.vertices[1],
-          session: p.vertices[2]
+          session: p.vertices[2],
+          edges: p.edges
         }
       `);
+      const chain = await chainCursor.all();
       if (!chain[0]) return null;
-      const { plan, concept, hypothesis, session } = chain[0];
+      
+      const { plan, concept, hypothesis, session, edges } = chain[0];
       return {
         plan: mapArangoDoc(plan),
         concept: mapArangoDoc(concept),
         hypothesis: mapArangoDoc(hypothesis),
         session: mapArangoDoc(session),
-        planToConceptEdge: mapArangoDoc(p.edges[0]?.document), // This needs the actual edge doc
-        conceptToHypothesisEdge: mapArangoDoc(p.edges[1]?.document),
-        hypothesisToSessionEdge: mapArangoDoc(p.edges[2]?.document),
+        planToConceptEdge: mapArangoDoc(edges[0]?.document),
+        conceptToHypothesisEdge: mapArangoDoc(edges[1]?.document),
+        hypothesisToSessionEdge: mapArangoDoc(edges[2]?.document),
       };
     },
     getRecentMemory: async () => {
@@ -149,60 +157,88 @@ export const resolvers = {
       const results = await db.query(aql`FOR c IN concepts FILTER c._key == ${conceptId} RETURN c`);
       return mapArangoList(results);
     },
-    verifyGenealogy: async (_, { conceptId }) => {
-      const results = await db.query(aql`FOR p IN 1..5 OUTBOUND ${conceptId} provenance_edges RETURN p`);
-      return results.map(p => ({
-        ...p,
-        // ProvenanceChain requires specific structure, mapping the vertices and edges here
-      }));
-    }
+    getConsensus: async (_, { claim }) => {
+      const result = await db.query(aql`FOR c IN consensus FILTER c.claim == ${claim} RETURN c`);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
+    },
+    getSovereignReceipt: async (_, { claimId }) => {
+      const claimCursor = await db.query(aql`FOR c IN claims FILTER c._key == ${claimId} RETURN c`);
+      const claims = await claimCursor.all();
+      const claim = claims[0];
+      if (!claim) return null;
+
+      const eventCursor = await db.query(aql`
+        FOR e IN events 
+        FILTER e.claimId == ${claimId}
+        SORT e.index ASC
+        RETURN e
+      `);
+      const events = await eventCursor.all();
+
+      return {
+        claim: mapArangoDoc(claim),
+        consensusSeal: `SVR-${claim._key.toUpperCase()}-${events.length}`,
+        provenanceChain: mapArangoList(events),
+      };
+    },
   },
   Mutation: {
     createTask: async (_, { input }) => {
-      const now = new Date().toISOString();
-      
-      const createRecursiveTask = async (taskInput: any, parentId?: string) => {
-        const cursor = await db.query(aql`
-          INSERT {
-            title: ${taskInput.title},
-            status: ${taskInput.status},
-            priority: ${taskInput.priority ?? null},
-            project: ${taskInput.project ?? null},
-            scope: ${taskInput.scope ?? null},
-            description: ${taskInput.description ?? null},
-            notes: ${taskInput.notes ?? null},
-            definitionOfDone: ${taskInput.definitionOfDone ?? null},
-            prompt: ${taskInput.prompt ?? null},
-            results: ${taskInput.results ?? null},
-            createdAt: ${now},
-            updatedAt: ${now}
-          } INTO tasks RETURN NEW
-        `);
-        const results = await cursor.all();
-        const task = results[0];
+      return await applySoterVeto(input).then(async () => {
+        const now = new Date().toISOString();
         
-        if (parentId) {
-          await db.query(aql`
-            INSERT {
-              _from: ${parentId},
-              _to: ${task._id},
-              type: 'SUBTASK'
-            } INTO TASK_EDGES
-          `);
-        }
-        
-        if (taskInput.subtasks && Array.isArray(taskInput.subtasks)) {
-          for (const subtask of taskInput.subtasks) {
-            await createRecursiveTask(subtask, task._id);
-          }
-        }
-        
-        return task;
-      };
+        const createRecursiveTask = async (taskInput: any, parentId?: string) => {
+          try {
+            const cursor = await db.query(aql`
+              INSERT {
+                title: ${taskInput.title},
+                status: ${taskInput.status},
+                priority: ${taskInput.priority ?? null},
+                project: ${taskInput.project ?? null},
+                scope: ${taskInput.scope ?? null},
+                description: ${taskInput.description ?? null},
+                notes: ${taskInput.notes ?? null},
+                definitionOfDone: ${taskInput.definitionOfDone ?? null},
+                prompt: ${taskInput.prompt ?? null},
+                results: ${taskInput.results ?? null},
+                createdAt: ${now},
+                updatedAt: ${now}
+              } INTO tasks RETURN NEW
+            `);
+            const results = await cursor.all();
+            const task = results[0];
+            
+            if (!task) throw new Error('Failed to insert task');
 
-      const finalTask = await createRecursiveTask(input);
-      return mapArangoDoc(finalTask);
+            if (parentId) {
+              await db.query(aql`
+                INSERT {
+                  _from: ${parentId},
+                  _to: ${task._id},
+                  type: 'SUBTASK'
+                } INTO TASK_EDGES
+              `);
+            }
+            
+            if (taskInput.subtasks && Array.isArray(taskInput.subtasks)) {
+              for (const subtask of taskInput.subtasks) {
+                await createRecursiveTask(subtask, task._id);
+              }
+            }
+            
+            return task;
+          } catch (error: any) {
+            console.error(`Error creating task ${taskInput.title}:`, error);
+            throw error;
+          }
+        };
+        
+        const finalTask = await createRecursiveTask(input);
+        return mapArangoDoc(finalTask);
+      });
     },
+
 
 
     updateTask: async (_, { id, input }) => {
@@ -225,12 +261,62 @@ export const resolvers = {
       const results = await cursor.all();
       return mapArangoDoc(results[0]);
     },
+    deleteTask: async (_, { id }) => {
+      const taskCursor = await db.query(aql`FOR t IN tasks FILTER t._key == ${id} RETURN t`);
+      const taskResults = await taskCursor.all();
+      const task = taskResults[0];
+      if (!task) return false;
+
+      const taskInternalId = task._id; 
+
+      const cascadeDelete = async (currentId: string) => {
+        const childrenCursor = await db.query(aql`
+          FOR v IN 1..1 OUTBOUND ${currentId} TASK_EDGES 
+          RETURN v
+        `);
+        const children = await childrenCursor.all();
+        
+        if (children && children.length > 0) {
+          for (const child of children) {
+            await cascadeDelete(child._id);
+          }
+        }
+
+        await db.query(aql`
+          FOR edge IN TASK_EDGES 
+          FILTER edge._from == ${currentId} OR edge._to == ${currentId} 
+          REMOVE edge IN TASK_EDGES
+        `);
+
+        try {
+          await db.collection('tasks').remove(currentId.split('/')[1]);
+        } catch (e) {
+          // Ignore
+        }
+      };
+
+      try {
+        await cascadeDelete(taskInternalId);
+        return true;
+      } catch (e) {
+        console.error("Cascade delete failed:", e);
+        return false;
+      }
+    },
+
+
+
+
+
+
+
 
     updateTaskStatus: async (_, { input }) => {
       const result = await db.query(aql`
-        UPDATE ${input.id} WITH { status: ${input.status} } IN tasks
+        UPDATE ${input.id} WITH { status: ${input.status} } IN tasks RETURN NEW
       `);
-      return mapArangoDoc(result);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     createDependency: async (_, { input }) => {
       await db.query(aql`
@@ -243,122 +329,162 @@ export const resolvers = {
       return { fromId: input.fromId, toId: input.toId, depType: input.depType };
     },
     createIncident: async (_, { input }) => {
+      const now = new Date().toISOString();
       const result = await db.query(aql`
         INSERT {
-          ...${input},
-          timestamp: ${input.timestamp || aql`DATE_ISO8601()`}
-        } INTO incidents
+          request: ${input.request},
+          score: ${input.score},
+          resolved: ${input.resolved ?? false},
+          timestamp: ${input.timestamp || now},
+          patterns: ${input.patterns ?? []}
+        } INTO incidents RETURN NEW
       `);
-      return mapArangoDoc(result[0]);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     updateIncident: async (_, { id, input }) => {
       const result = await db.query(aql`
-        UPDATE ${id} WITH ${input} IN incidents
+        UPDATE ${id} WITH ${input} IN incidents RETURN NEW
       `);
-      return mapArangoDoc(result);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     createReview: async (_, { input }) => {
+      const now = new Date().toISOString();
       const result = await db.query(aql`
         INSERT {
-          ...${input},
-          createdAt: DATE_ISO8601()
-        } INTO reviews
+          incidentId: ${input.incidentId},
+          status: ${input.status},
+          priority: ${input.priority},
+          decision: ${input.decision ?? null},
+          createdAt: ${now}
+        } INTO reviews RETURN NEW
       `);
-      return mapArangoDoc(result[0]);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     updateReview: async (_, { id, input }) => {
       const result = await db.query(aql`
-        UPDATE ${id} WITH ${input} IN reviews
+        UPDATE ${id} WITH ${input} IN reviews RETURN NEW
       `);
-      return mapArangoDoc(result);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     createEpistemicMark: async (_, { input }) => {
+      const now = new Date().toISOString();
       const result = await db.query(aql`
         INSERT {
-          ...${input},
-          timestamp: DATE_ISO8601()
-        } INTO epistemic_marks
+          label: ${input.label},
+          topic: ${input.topic},
+          reasoningChain: ${input.reasoningChain ?? null},
+          sessionId: ${input.sessionId ?? null},
+          timestamp: ${now}
+        } INTO epistemic_marks RETURN NEW
       `);
-      return mapArangoDoc(result[0]);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     updateEpistemicMark: async (_, { id, input }) => {
       const result = await db.query(aql`
-        UPDATE ${id} WITH ${input} IN epistemic_marks
+        UPDATE ${id} WITH ${input} IN epistemic_marks RETURN NEW
       `);
-      return mapArangoDoc(result);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     createShadowEntry: async (_, { input }) => {
+      const now = new Date().toISOString();
       const result = await db.query(aql`
         INSERT {
-          ...${input},
-          timestamp: DATE_ISO8601()
-        } INTO shadow_entries
+          category: ${input.category},
+          content: ${input.content},
+          sessionId: ${input.sessionId ?? null},
+          timestamp: ${now}
+        } INTO shadow_entries RETURN NEW
       `);
-      return mapArangoDoc(result[0]);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     updateShadowEntry: async (_, { id, input }) => {
       const result = await db.query(aql`
-        UPDATE ${id} WITH ${input} IN shadow_entries
+        UPDATE ${id} WITH ${input} IN shadow_entries RETURN NEW
       `);
-      return mapArangoDoc(result);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     createSymbol: async (_, { name, stage }) => {
       const result = await db.query(aql`
-        INSERT { name, stage } INTO symbols
+        INSERT { name: ${name}, stage: ${stage} } INTO symbols RETURN NEW
       `);
-      return mapArangoDoc(result[0]);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     updateSymbol: async (_, { input }) => {
       const result = await db.query(aql`
         UPDATE ${input.id} WITH {
           stage: ${input.stage},
           intention: ${input.intention}
-        } IN symbols
+        } IN symbols RETURN NEW
       `);
-      return mapArangoDoc(result);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     createPivot: async (_, { input }) => {
+      const now = new Date().toISOString();
       const result = await db.query(aql`
         INSERT {
-          ...${input},
-          timestamp: DATE_ISO8601()
-        } INTO pivots
+          ruptureId: ${input.ruptureId},
+          proposal: ${input.proposal},
+          expectedDelta: ${input.expectedDelta},
+          channelId: ${input.channelId},
+          timestamp: ${now}
+        } INTO pivots RETURN NEW
       `);
-      return mapArangoDoc(result[0]);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     createQuest: async (_, { input }) => {
+      const now = new Date().toISOString();
       const result = await db.query(aql`
         INSERT {
-          ...${input},
-          timestamp: DATE_ISO8601()
-        } INTO quests
+          unknownId: ${input.unknownId},
+          focusArea: ${input.focusArea},
+          channelId: ${input.channelId},
+          timestamp: ${now}
+        } INTO quests RETURN NEW
       `);
-      return mapArangoDoc(result[0]);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     createPlan: async (_, { input }) => {
       const result = await db.query(aql`
         INSERT {
-          ...${input},
+          summary: ${input.summary},
+          steps: ${input.steps ?? []},
+          riskAssessment: ${input.riskAssessment ?? null},
           groundingStatus: 'PENDING'
-        } INTO plans
+        } INTO plans RETURN NEW
       `);
-      return mapArangoDoc(result[0]);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     updatePlan: async (_, { id, input }) => {
       const result = await db.query(aql`
-        UPDATE ${id} WITH ${input} IN plans
+        UPDATE ${id} WITH ${input} IN plans RETURN NEW
       `);
-      return mapArangoDoc(result);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     createMemoryFragment: async (_, { fragment, provenance }) => {
+      const now = new Date().toISOString();
       const result = await db.query(aql`
         INSERT {
-          fragment,
-          provenance,
-          timestamp: DATE_ISO8601()
-        } INTO memory_fragments
+          fragment: ${fragment},
+          provenance: ${provenance},
+          timestamp: ${now}
+        } INTO memory_fragments RETURN NEW
       `);
-      return mapArangoDoc(result[0]);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     setSourceCredibility: async (_, { sourceId, tier }) => {
       await db.query(aql`
@@ -367,27 +493,113 @@ export const resolvers = {
       return { sourceId, tier };
     },
     recordConsensus: async (_, { divergence, agreement }) => {
+      const now = new Date().toISOString();
       const result = await db.query(aql`
         INSERT {
           divergence,
           agreement,
-          timestamp: DATE_ISO8601()
-        } INTO consensus_logs
+          timestamp: ${now}
+        } INTO consensus_logs RETURN NEW
       `);
-      return mapArangoDoc(result[0]);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
     },
     bootSovereign: async (_, { config }) => {
+      const now = new Date().toISOString();
       await db.query(aql`
         INSERT {
           proposal: 'BOOT SEQUENCE',
           expectedDelta: 'INIT_STATE',
           status: 'SOVEREIGN_SEAL',
-          timestamp: DATE_ISO8601(),
+          timestamp: ${now},
           config: ${config}
         } INTO pivots
       `);
       
       return await resolvers.Query.getState();
-    }
+    },
+
+    createConsensus: async (_, { input }) => {
+      const now = new Date().toISOString();
+      const result = await db.query(aql`
+        INSERT {
+          claim: ${input.claim},
+          evidence: ${input.evidence ?? []},
+          confidence: ${input.confidence},
+          label: ${input.label ?? 'UNCERTAIN'},
+          timestamp: ${now}
+        } INTO consensus RETURN NEW
+      `);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
+    },
+    createQualiaBridge: async (_, { input }) => {
+      const result = await db.query(aql`
+        INSERT {
+          solSide: ${input.solSide},
+          noxSide: ${input.noxSide},
+          bridgeStatus: 'ACTIVE',
+          resonance: 1.0,
+        } INTO qualia_bridges RETURN NEW
+      `);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
+    },
+    triggerSovereignQuest: async (_, { focusArea, unknownId }) => {
+      return await applySoterVeto({ focusArea, unknownId }).then(async () => {
+        const now = new Date().toISOString();
+        const questCursor = await db.query(aql`
+          INSERT {
+            unknownId: ${unknownId},
+            focusArea: ${focusArea},
+            status: 'ACTIVE',
+            discoveredEvidence: [],
+            timestamp: ${now}
+          } INTO quests RETURN NEW
+        `);
+        const quests = await questCursor.all();
+        const quest = quests[0];
+
+        const discoveryTasks = [
+          { title: `Audit ${focusArea} for ${unknownId}`, status: 'READY' },
+          { title: `Cross-reference ${unknownId} with Mnemosyne Vault`, status: 'READY' }
+        ];
+
+        for (const taskData of discoveryTasks) {
+          await db.query(aql`
+            INSERT {
+              title: ${taskData.title},
+              status: ${taskData.status},
+              project: 'Sovereign-Quest',
+              createdAt: ${now}
+            } INTO tasks
+          `);
+        }
+
+        return mapArangoDoc(quest);
+      });
+    },
+    recordSovereignEvent: async (_, { content }) => {
+      const now = new Date().toISOString();
+      const lastEventCursor = await db.query(aql`FOR e IN events SORT e.index DESC LIMIT 1 RETURN e`);
+      const lastEvents = await lastEventCursor.all();
+      const lastEvent = lastEvents[0];
+
+      const index = lastEvent ? lastEvent.index + 1 : 0;
+      const prevHash = lastEvent ? lastEvent.currentHash : '0x0';
+      const currentHash = `hash(${prevHash}+${content})`;
+
+      const result = await db.query(aql`
+        INSERT {
+          index: ${index},
+          previousHash: ${prevHash},
+          currentHash: ${currentHash},
+          content: ${content},
+          timestamp: ${now}
+        } INTO events RETURN NEW
+      `);
+      const docs = await result.all();
+      return mapArangoDoc(docs[0]);
+    },
   }
 }

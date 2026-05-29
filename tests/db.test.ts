@@ -6,7 +6,7 @@ describe('ArangoDB Mapper Tests', () => {
   test('mapArangoDoc should convert _key to id and strip system fields', () => {
     const doc = { _key: '123', _id: 'tasks/123', _rev: 'abc', title: 'Test Task' };
     const result = mapArangoDoc(doc);
-    expect(result).toEqual({ id: '123', title: 'Test Task' });
+    expect(result).toEqual({ id: '123', title: 'Test Task', status: 'OPEN', subtasks: [] });
     expect(result._key).toBeUndefined();
     expect(result._id).toBeUndefined();
     expect(result._rev).toBeUndefined();
@@ -23,8 +23,8 @@ describe('ArangoDB Mapper Tests', () => {
     ];
     const result = mapArangoList(docs);
     expect(result).toEqual([
-      { id: '1', title: 'Task 1' },
-      { id: '2', title: 'Task 2' },
+      { id: '1', title: 'Task 1', status: 'OPEN', subtasks: [] },
+      { id: '2', title: 'Task 2', status: 'OPEN', subtasks: [] },
     ]);
   });
 
@@ -43,18 +43,19 @@ describe('ArangoDB End-to-End Integration', () => {
     };
     
     const now = new Date().toISOString();
-    const result = await db.query(aql`
+    const result = await (await db.query(aql`
       INSERT {
         title: ${taskData.title},
         status: ${taskData.status},
         priority: ${taskData.priority},
         project: ${taskData.project},
         createdAt: ${now},
-      } INTO tasks
-    `);
+      } INTO tasks RETURN NEW
+    `)).all();
     const key = result[0]._key;
     
-    const found = await db.query(aql`FOR t IN tasks FILTER t._key == ${key} RETURN t`);
+    const foundResult = await db.query(aql`FOR t IN tasks FILTER t._key == ${key} RETURN t`);
+    const found = await foundResult.all();
     expect(found[0]).toBeDefined();
     expect(found[0].title).toBe(taskData.title);
     
@@ -71,13 +72,13 @@ describe('ArangoDB End-to-End Integration', () => {
       timestamp: new Date().toISOString(),
     };
     
-    const result = await db.query(aql`
+    const result = await (await db.query(aql`
       INSERT {
         fragment: ${memoryData.fragment},
         provenance: ${memoryData.provenance},
         timestamp: ${memoryData.timestamp}
-      } INTO memory_fragments
-    `);
+      } INTO memory_fragments RETURN NEW
+    `)).all();
     expect(result[0]._key).toBeDefined();
   });
 
@@ -85,8 +86,8 @@ describe('ArangoDB End-to-End Integration', () => {
     const planData = { summary: 'Test Plan', steps: [], riskAssessment: 'Low', groundingStatus: 'PENDING' };
     const conceptData = { name: 'Test Concept', description: 'Test Desc' };
 
-    const planResult = await db.query(aql`INSERT ${planData} INTO plans`);
-    const conceptResult = await db.query(aql`INSERT ${conceptData} INTO concepts`);
+    const planResult = await (await db.query(aql`INSERT ${planData} INTO plans RETURN NEW`)).all();
+    const conceptResult = await (await db.query(aql`INSERT ${conceptData} INTO concepts RETURN NEW`)).all();
     
     const planKey = planResult[0]._key;
     const conceptKey = conceptResult[0]._key;

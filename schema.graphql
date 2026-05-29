@@ -205,6 +205,72 @@ type DreamSession {
   seedConcepts: [String!]!
 }
 
+type SovereignEvent {
+  id: ID!
+  index: Int!
+  previousHash: String
+  currentHash: String!
+  content: String!
+  timestamp: String!
+}
+
+type SovereignClaim {
+  id: ID!
+  conclusion: String!
+  consensusRatio: Float!
+  timestamp: String!
+  groundingFragments: [MemoryFragment!]!
+}
+
+type SovereignReceipt {
+  claim: SovereignClaim!
+  consensusSeal: String!
+  provenanceChain: [SovereignEvent!]!
+}
+
+type JanusConsensus {
+  id: ID!
+  claim: String!
+  evidence: [String!]!
+  confidence: Float!
+  label: EpistemicLabel!
+  timestamp: String!
+}
+
+type QualiaBridge {
+  id: ID!
+  solSide: String!
+  noxSide: String!
+  bridgeStatus: String!
+  resonance: Float!
+}
+
+type Archetype {
+  id: ID!
+  name: String!
+  domain: String!
+  manifestation: String!
+}
+
+type SymbolicIntegration {
+  id: ID!
+  symbolId: ID!
+  archetypeId: ID!
+  integrationQuality: Float!
+  notes: String
+}
+
+input JanusConsensusInput {
+  claim: String!
+  evidence: [String!]
+  confidence: Float!
+}
+
+input QualiaBridgeInput {
+  solSide: String!
+  noxSide: String!
+}
+
 type ProvenanceChain {
   plan: ActionablePlan!
   planToConceptEdge: EdgeInfo!
@@ -313,6 +379,7 @@ input SovereignQuestInput {
 
 input TaskInput {
   title: String!
+  status: TaskStatus!
   project: String
   scope: String
   priority: String
@@ -450,11 +517,15 @@ type Query {
   getRecentMemory: MemoryFragment
   getRelevantContext(conceptId: ID!): [Concept!]!
   verifyGenealogy(conceptId: ID!): [ProvenanceChain!]!
+  getConsensus(claim: String!): JanusConsensus
+  getQualiaBridge(id: ID!): QualiaBridge
+  getSovereignReceipt(claimId: ID!): SovereignReceipt
 }
 
 type Mutation {
   createTask(input: TaskInput!): Task!
   updateTask(id: ID!, input: TaskUpdateInput!): Task!
+  deleteTask(id: ID!): Boolean!
   updateTaskStatus(input: TaskStatusInput!): Task!
   createDependency(input: DependencyInput!): TaskDependency!
 
@@ -482,4 +553,10 @@ type Mutation {
   setSourceCredibility(sourceId: ID!, tier: Int!): JSON!
   recordConsensus(divergence: String!, agreement: String!): JSON!
   bootSovereign(config: JSON!): SovereignState!
+  
+  createConsensus(input: JanusConsensusInput!): JanusConsensus!
+  createQualiaBridge(input: QualiaBridgeInput!): QualiaBridge!
+  integrateSymbol(symbolId: ID!, archetypeId: ID!): SymbolicIntegration!
+  triggerSovereignQuest(focusArea: String!, unknownId: String!): SovereignQuest!
+  recordSovereignEvent(content: String!): SovereignEvent!
 }
