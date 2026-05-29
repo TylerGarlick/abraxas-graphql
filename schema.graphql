@@ -430,7 +430,13 @@ input EpistemicMarkUpdateInput {
   sessionId: String
 }
 
+type DatabaseStatus {
+  version: String
+  status: String!
+}
+
 type Query {
+  getDatabaseStatus: DatabaseStatus!
   getState: SovereignState!
   getTask(id: ID!): Task
   getTasks(project: String, status: TaskStatus): [Task!]!

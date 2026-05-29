@@ -1,5 +1,37 @@
 import { expect, test, describe } from 'bun:test';
 import { db, aql } from '../src/common/db';
+import { mapArangoDoc, mapArangoList } from '../src/common/mapper';
+
+describe('ArangoDB Mapper Tests', () => {
+  test('mapArangoDoc should convert _key to id and strip system fields', () => {
+    const doc = { _key: '123', _id: 'tasks/123', _rev: 'abc', title: 'Test Task' };
+    const result = mapArangoDoc(doc);
+    expect(result).toEqual({ id: '123', title: 'Test Task' });
+    expect(result._key).toBeUndefined();
+    expect(result._id).toBeUndefined();
+    expect(result._rev).toBeUndefined();
+  });
+
+  test('mapArangoDoc should return null for null input', () => {
+    expect(mapArangoDoc(null)).toBeNull();
+  });
+
+  test('mapArangoList should map an array of docs', () => {
+    const docs = [
+      { _key: '1', title: 'Task 1' },
+      { _key: '2', title: 'Task 2' },
+    ];
+    const result = mapArangoList(docs);
+    expect(result).toEqual([
+      { id: '1', title: 'Task 1' },
+      { id: '2', title: 'Task 2' },
+    ]);
+  });
+
+  test('mapArangoList should return empty array for null input', () => {
+    expect(mapArangoList(null)).toEqual([]);
+  });
+});
 
 describe('ArangoDB End-to-End Integration', () => {
   test('should successfully create and retrieve a task', async () => {
@@ -25,6 +57,11 @@ describe('ArangoDB End-to-End Integration', () => {
     const found = await db.query(aql`FOR t IN tasks FILTER t._key == ${key} RETURN t`);
     expect(found[0]).toBeDefined();
     expect(found[0].title).toBe(taskData.title);
+    
+    // Verify mapper works with actual DB data
+    const mapped = mapArangoDoc(found[0]);
+    expect(mapped.id).toBe(key);
+    expect(mapped.title).toBe(taskData.title);
   });
 
   test('should successfully create a memory fragment', async () => {
