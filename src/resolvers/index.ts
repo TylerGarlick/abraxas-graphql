@@ -37,8 +37,48 @@ export const resolvers = {
     getTask: async (_, { id }) => {
       const cursor = await db.query(aql`FOR t IN tasks FILTER t._key == ${id} RETURN t`);
       const results = await cursor.all();
-      return mapArangoDoc(results[0]) || null;
+      const task = results[0];
+      if (!task) return null;
+
+      const resolveTask = async (t: any): Promise<any> => {
+        const subtaskCursor = await db.query(aql`
+          FOR v IN 1..1 OUTBOUND ${t._id} TASK_EDGES 
+          RETURN v
+        `);
+        const subtasks = await subtaskCursor.all();
+        
+        return {
+          ...mapArangoDoc(t),
+          subtasks: await Promise.all(subtasks.map(st => resolveTask(st))),
+        };
+      };
+
+      return resolveTask(task);
     },
+    getTasks: async (_, { project, status }) => {
+      const cursor = await db.query(aql`
+        FOR t IN tasks 
+        FILTER (${project ? aql`t.project == ${project}` : 'true'}) 
+        FILTER (${status ? aql`t.status == ${status}` : 'true'}) 
+        RETURN t
+      `);
+      const tasks = await cursor.all();
+      
+      const enrichedTasks = await Promise.all(tasks.map(async (task) => {
+        const subtaskCursor = await db.query(aql`
+          FOR v IN 1..1 OUTBOUND ${task._id} TASK_EDGES 
+          RETURN v
+        `);
+        const subtasks = await subtaskCursor.all();
+        return {
+          ...mapArangoDoc(task),
+          subtasks: mapArangoList(subtasks),
+        };
+      }));
+      
+      return enrichedTasks;
+    },
+
     getTasks: async (_, { project, status }) => {
       const cursor = await db.query(aql`
         FOR t IN tasks 
@@ -120,25 +160,50 @@ export const resolvers = {
   Mutation: {
     createTask: async (_, { input }) => {
       const now = new Date().toISOString();
-      const result = await db.query(aql`
-        INSERT {
-          title: ${input.title},
-          status: ${input.status},
-          priority: ${input.priority ?? null},
-          project: ${input.project ?? null},
-          scope: ${input.scope ?? null},
-          description: ${input.description ?? null},
-          notes: ${input.notes ?? null},
-          definitionOfDone: ${input.definitionOfDone ?? null},
-          prompt: ${input.prompt ?? null},
-          results: ${input.results ?? null},
-          createdAt: ${now},
-          updatedAt: ${now}
-        } INTO tasks RETURN NEW
-      `);
-      const results = await result.all();
-      return mapArangoDoc(results[0]);
+      
+      const createRecursiveTask = async (taskInput: any, parentId?: string) => {
+        const cursor = await db.query(aql`
+          INSERT {
+            title: ${taskInput.title},
+            status: ${taskInput.status},
+            priority: ${taskInput.priority ?? null},
+            project: ${taskInput.project ?? null},
+            scope: ${taskInput.scope ?? null},
+            description: ${taskInput.description ?? null},
+            notes: ${taskInput.notes ?? null},
+            definitionOfDone: ${taskInput.definitionOfDone ?? null},
+            prompt: ${taskInput.prompt ?? null},
+            results: ${taskInput.results ?? null},
+            createdAt: ${now},
+            updatedAt: ${now}
+          } INTO tasks RETURN NEW
+        `);
+        const results = await cursor.all();
+        const task = results[0];
+        
+        if (parentId) {
+          await db.query(aql`
+            INSERT {
+              _from: ${parentId},
+              _to: ${task._id},
+              type: 'SUBTASK'
+            } INTO TASK_EDGES
+          `);
+        }
+        
+        if (taskInput.subtasks && Array.isArray(taskInput.subtasks)) {
+          for (const subtask of taskInput.subtasks) {
+            await createRecursiveTask(subtask, task._id);
+          }
+        }
+        
+        return task;
+      };
+
+      const finalTask = await createRecursiveTask(input);
+      return mapArangoDoc(finalTask);
     },
+
 
     updateTask: async (_, { id, input }) => {
       const now = new Date().toISOString();

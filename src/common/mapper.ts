@@ -3,6 +3,7 @@ export const mapArangoDoc = (doc: any) => {
   const { _key, _id, _rev, ...rest } = doc;
   return {
     id: _key,
+    subtasks: rest.subtasks ?? [],
     ...rest,
   };
 };
