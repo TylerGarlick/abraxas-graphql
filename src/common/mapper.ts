@@ -8,7 +8,9 @@ export const mapArangoDoc = (doc: any) => {
     ...rest,
   };
 
-  if (mapped.status && typeof mapped.status === 'string') {
+  if (mapped.status === undefined || mapped.status === null) {
+    mapped.status = 'OPEN';
+  } else if (typeof mapped.status === 'string') {
     mapped.status = mapped.status.toUpperCase();
   }
 

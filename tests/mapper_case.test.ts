@@ -14,10 +14,10 @@ describe('ArangoDB Mapper Case Normalization', () => {
     expect(result.status).toBe('OPEN');
   });
 
-  test('should handle missing status safely', () => {
+  test('should handle missing status safely by defaulting to OPEN', () => {
     const doc = { _key: '3', title: 'No Status' };
     const result = mapArangoDoc(doc);
-    expect(result.status).toBeUndefined();
+    expect(result.status).toBe('OPEN');
   });
 
   test('should handle non-string status safely', () => {
