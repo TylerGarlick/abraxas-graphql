@@ -31,7 +31,7 @@ export const resolvers = {
         }
       } catch (error) {
         return {
-          version: null,
+          version: 'UNKNOWN',
           status: 'INACCESSIBLE',
         }
       }
