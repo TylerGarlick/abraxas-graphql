@@ -46,15 +46,15 @@ export const resolvers = {
 
       return {
         unresolvedIncidents: incidents.length,
-        readyTasks: mapArangoList(tasks),
-        recentMemory: mapArangoDoc(memory[0]) || null,
+        readyTasks: mapArangoList(tasks, 'Task'),
+        recentMemory: mapArangoDoc(memory[0], 'MemoryFragment'),
       }
     },
     getTask: async (_, { id }) => {
       const cursor = await db.query(aql`FOR t IN tasks FILTER t._key == ${id} RETURN t`)
       const results = await cursor.all()
       const task = results[0]
-      if (!task) return null
+      if (!task) return mapArangoDoc(null, 'Task')
 
       const resolveTask = async (t: any): Promise<any> => {
         const subtaskCursor = await db.query(aql`
@@ -64,7 +64,7 @@ export const resolvers = {
         const subtasks = await subtaskCursor.all()
 
         return {
-          ...mapArangoDoc(t),
+          ...mapArangoDoc(t, 'Task'),
           subtasks: await Promise.all(subtasks.map(st => resolveTask(st))),
         }
       }
@@ -87,8 +87,8 @@ export const resolvers = {
         `)
         const subtasks = await subtaskCursor.all()
         return {
-          ...mapArangoDoc(task),
-          subtasks: mapArangoList(subtasks),
+          ...mapArangoDoc(task, 'Task'),
+          subtasks: mapArangoList(subtasks, 'Task'),
         }
       }))
 
@@ -98,32 +98,32 @@ export const resolvers = {
 
       const cursor = await db.query(aql`FOR i IN incidents RETURN i`)
       const results = await cursor.all()
-      return mapArangoList(results)
+      return mapArangoList(results, 'SoterIncident')
     },
     getSoterReviews: async () => {
       const cursor = await db.query(aql`FOR r IN reviews RETURN r`)
       const results = await cursor.all()
-      return mapArangoList(results)
+      return mapArangoList(results, 'SoterReview')
     },
     getEpistemicMarks: async () => {
       const cursor = await db.query(aql`FOR e IN epistemic_marks RETURN e`)
       const results = await cursor.all()
-      return mapArangoList(results)
+      return mapArangoList(results, 'EpistemicMark')
     },
     getShadowEntries: async () => {
       const cursor = await db.query(aql`FOR s IN shadow_entries RETURN s`)
       const results = await cursor.all()
-      return mapArangoList(results)
+      return mapArangoList(results, 'ShadowEntry')
     },
     getSymbolNodes: async () => {
       const cursor = await db.query(aql`FOR sy IN symbols RETURN sy`)
       const results = await cursor.all()
-      return mapArangoList(results)
+      return mapArangoList(results, 'SymbolNode')
     },
     getBenchmarkResults: async () => {
       const cursor = await db.query(aql`FOR b IN benchmark_results RETURN b`)
       const results = await cursor.all()
-      return mapArangoList(results)
+      return mapArangoList(results, 'BenchmarkResult')
     },
     getProvenanceChain: async (_, { planId }) => {
       const chainCursor = await db.query(aql`
@@ -137,37 +137,49 @@ export const resolvers = {
         }
       `)
       const chain = await chainCursor.all()
-      if (!chain[0]) return null
+      if (!chain[0]) return {
+        plan: mapArangoDoc(null, 'ActionablePlan'),
+        concept: mapArangoDoc(null, 'Concept'),
+        hypothesis: mapArangoDoc(null, 'SoterIncident'), // Example placeholder since Hypothesis default wasn't fully defined, using SoterIncident or creating one
+        session: mapArangoDoc(null, 'MemoryFragment'),
+        planToConceptEdge: mapArangoDoc(null, 'EdgeInfo'),
+        conceptToHypothesisEdge: mapArangoDoc(null, 'EdgeInfo'),
+        hypothesisToSessionEdge: mapArangoDoc(null, 'EdgeInfo'),
+      }
 
       const { plan, concept, hypothesis, session, edges } = chain[0]
       return {
-        plan: mapArangoDoc(plan),
-        concept: mapArangoDoc(concept),
-        hypothesis: mapArangoDoc(hypothesis),
-        session: mapArangoDoc(session),
-        planToConceptEdge: mapArangoDoc(edges[0]?.document),
-        conceptToHypothesisEdge: mapArangoDoc(edges[1]?.document),
-        hypothesisToSessionEdge: mapArangoDoc(edges[2]?.document),
+        plan: mapArangoDoc(plan, 'ActionablePlan'),
+        concept: mapArangoDoc(concept, 'Concept'),
+        hypothesis: mapArangoDoc(hypothesis, 'SoterIncident'), 
+        session: mapArangoDoc(session, 'MemoryFragment'),
+        planToConceptEdge: mapArangoDoc(edges[0]?.document, 'EdgeInfo'),
+        conceptToHypothesisEdge: mapArangoDoc(edges[1]?.document, 'EdgeInfo'),
+        hypothesisToSessionEdge: mapArangoDoc(edges[2]?.document, 'EdgeInfo'),
       }
     },
     getRecentMemory: async () => {
       const memories = await db.query(aql`FOR m IN memory_fragments SORT m.timestamp DESC LIMIT 1 RETURN m`)
-      return mapArangoDoc(memories[0]) || null
+      return mapArangoDoc(memories[0], 'MemoryFragment')
     },
     getRelevantContext: async (_, { conceptId }) => {
       const results = await db.query(aql`FOR c IN concepts FILTER c._key == ${conceptId} RETURN c`)
-      return mapArangoList(results)
+      return mapArangoList(results, 'Concept')
     },
     getConsensus: async (_, { claim }) => {
       const result = await db.query(aql`FOR c IN consensus FILTER c.claim == ${claim} RETURN c`)
       const docs = await result.all()
-      return mapArangoDoc(docs[0])
+      return mapArangoDoc(docs[0], 'JanusConsensus')
     },
     getSovereignReceipt: async (_, { claimId }) => {
       const claimCursor = await db.query(aql`FOR c IN claims FILTER c._key == ${claimId} RETURN c`)
       const claims = await claimCursor.all()
       const claim = claims[0]
-      if (!claim) return null
+      if (!claim) return {
+        claim: mapArangoDoc(null, 'JanusConsensus'),
+        consensusSeal: 'SVR-UNKNOWN-0',
+        provenanceChain: [],
+      }
 
       const eventCursor = await db.query(aql`
         FOR e IN events 
@@ -178,9 +190,9 @@ export const resolvers = {
       const events = await eventCursor.all()
 
       return {
-        claim: mapArangoDoc(claim),
+        claim: mapArangoDoc(claim, 'JanusConsensus'),
         consensusSeal: `SVR-${claim._key.toUpperCase()}-${events.length}`,
-        provenanceChain: mapArangoList(events),
+        provenanceChain: mapArangoList(events, 'MemoryFragment'),
       }
     },
   },

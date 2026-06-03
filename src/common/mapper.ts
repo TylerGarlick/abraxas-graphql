@@ -1,15 +1,20 @@
-export const mapArangoDoc = (doc: any) => {
-  if (!doc) return null;
+import { Defaults, DefaultType } from './defaults';
+
+export const mapArangoDoc = (doc: any, type: DefaultType = 'Task') => {
+  const defaultValues = Defaults[type];
+  
+  if (!doc) return { ...defaultValues };
+  
   const { _key, _id, _rev, ...rest } = doc;
   
   const mapped = {
-    id: _key,
-    subtasks: rest.subtasks ?? [],
+    ...defaultValues,
+    id: _key || defaultValues.id,
     ...rest,
   };
 
   if (mapped.status === undefined || mapped.status === null) {
-    mapped.status = 'OPEN';
+    mapped.status = (defaultValues.status || 'OPEN') as any;
   } else if (typeof mapped.status === 'string') {
     mapped.status = mapped.status.toUpperCase();
   }
@@ -17,7 +22,7 @@ export const mapArangoDoc = (doc: any) => {
   return mapped;
 };
 
-export const mapArangoList = (docs: any[]) => {
+export const mapArangoList = (docs: any[], type: DefaultType = 'Task') => {
   if (!docs) return [];
-  return docs.map(mapArangoDoc);
+  return docs.map(doc => mapArangoDoc(doc, type));
 };
