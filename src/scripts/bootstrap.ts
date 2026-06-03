@@ -37,6 +37,19 @@ const collections = [
   'memory_entities',
   'fragments',
   'tasks',
+  'reviews',
+  'epistemic_marks',
+  'shadow_entries',
+  'symbols',
+  'pivots',
+  'quests',
+  'plans',
+  'memory_fragments',
+  'consensus_logs',
+  'consensus',
+  'qualia_bridges',
+  'symbolic_integrations',
+  'archetypes'
 ]
 
 
