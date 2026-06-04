@@ -666,8 +666,8 @@ export const resolvers = {
       const result = await db.query(aql`
           INSERT
           {
-          divergence,
-          agreement,
+          divergence: ${divergence},
+          agreement: ${agreement},
           timestamp:
           ${now}
           }
