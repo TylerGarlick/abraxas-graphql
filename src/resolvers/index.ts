@@ -26,7 +26,7 @@ export const resolvers = {
       try {
         const version = await db.version()
         return {
-          version,
+          version: typeof version === 'object' ? JSON.stringify(version) : version,
           status: 'ACCESSIBLE',
         }
       } catch (error) {
@@ -201,7 +201,7 @@ export const resolvers = {
       return await applySoterVeto(input, true).then(async () => {
         const now = new Date().toISOString()
 
-        const createRecursiveTask = async (taskInput: any, parentId?: string) => {
+        const createRecursiveTask = async (taskInput: any, parentId?: string): Promise<any> => {
           try {
             const cursor = await db.query(aql`
                 INSERT
@@ -249,9 +249,9 @@ export const resolvers = {
             `)
             const results = await cursor.all()
             const task = results[0]
-
+            
             if (!task) throw new Error('Failed to insert task')
-
+            
             if (parentId) {
               await db.query(aql`
                   INSERT
@@ -269,14 +269,18 @@ export const resolvers = {
                   TASK_EDGES
               `)
             }
-
+            
             if (taskInput.subtasks && Array.isArray(taskInput.subtasks)) {
-              for (const subtask of taskInput.subtasks) {
-                await createRecursiveTask(subtask, task._id)
-              }
+              const subtasks = await Promise.all(
+                taskInput.subtasks.map(st => createRecursiveTask(st, task._id))
+              )
+              task.subtasks = subtasks.map(st => ({
+                ...st,
+                id: st.id
+              }))
             }
-
-            return task
+            
+            return mapArangoDoc(task)
           } catch (error: any) {
             console.error(`Error creating task ${taskInput.title}:`, error)
             throw error
@@ -287,6 +291,8 @@ export const resolvers = {
         return mapArangoDoc(finalTask)
       })
     },
+
+
 
 
     updateTask: async (_, { id, input }) => {
