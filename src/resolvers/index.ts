@@ -54,7 +54,7 @@ export const resolvers = {
       const cursor = await db.query(aql`FOR t IN tasks FILTER t._key == ${id} RETURN t`)
       const results = await cursor.all()
       const task = results[0]
-      if (!task) return mapArangoDoc(null, 'Task')
+      if (!task) return null
 
       const resolveTask = async (t: any): Promise<any> => {
         const subtaskCursor = await db.query(aql`
@@ -80,19 +80,52 @@ export const resolvers = {
       `)
       const tasks = await cursor.all()
 
-      const enrichedTasks = await Promise.all(tasks.map(async (task) => {
-        const subtaskCursor = await db.query(aql`
-          FOR v IN 1..1 OUTBOUND ${task._id} TASK_EDGES 
-          RETURN v
-        `)
-        const subtasks = await subtaskCursor.all()
-        return {
-          ...mapArangoDoc(task, 'Task'),
-          subtasks: mapArangoList(subtasks, 'Task'),
-        }
-      }))
+      if (tasks.length === 0) return []
 
-      return enrichedTasks
+      const allDocs = new Map(tasks.map(t => [t._id, t]))
+      const allEdges = []
+      let pendingIds = tasks.map(t => t._id)
+
+      while (pendingIds.length > 0) {
+        const edgesCursor = await db.query(aql`
+          FOR v IN 1..1 OUTBOUND ${pendingIds} TASK_EDGES 
+          RETURN { parentId: v._from, child: v._to }
+        `)
+        const edges = await edgesCursor.all()
+        if (edges.length === 0) break
+
+        allEdges.push(...edges)
+        
+        const childIds = edges.map(e => e.child).filter(id => !allDocs.has(id))
+        if (childIds.length === 0) break
+
+        const childrenCursor = await db.query(aql`
+          FOR t IN tasks 
+          FILTER t._id IN ${childIds} 
+          RETURN t
+        `)
+        const childrenDocs = await childrenCursor.all()
+        childrenDocs.forEach(d => allDocs.set(d._id, d))
+        
+        pendingIds = childIds
+      }
+
+      const buildTree = (taskDoc: any): any => {
+        const childrenEdges = allEdges.filter(e => e.parentId === taskDoc._id)
+        const subtasks = childrenEdges
+          .map(e => {
+            const childDoc = allDocs.get(e.child);
+            return childDoc ? buildTree(childDoc) : null;
+          })
+          .filter(Boolean)
+
+        return {
+          ...mapArangoDoc(taskDoc, 'Task'),
+          subtasks: subtasks,
+        }
+      }
+
+      return tasks.map(task => buildTree(task))
     },
     getSoterIncidents: async () => {
 
